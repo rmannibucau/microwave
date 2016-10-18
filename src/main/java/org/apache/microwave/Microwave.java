@@ -62,6 +62,7 @@ import static java.util.Optional.ofNullable;
 public class Microwave implements AutoCloseable {
     @Getter
     private final Builder configuration;
+
     private InternalTomcat tomcat;
     private File base;
 

@@ -50,4 +50,14 @@ public class MicrowaveTest {
             fail(e.getMessage());
         }
     }
+
+    @Test
+    public void json() {
+        try (final Microwave microwave = new Microwave(new Microwave.Builder().randomHttpPort()).start()) {
+            microwave.deployClasspath("");
+            assertEquals("{\"name\":\"test\"}", IOUtils.toString(new URL("http://localhost:" + microwave.getConfiguration().httpPort() + "/api/test/json")));
+        } catch (final IOException e) {
+            fail(e.getMessage());
+        }
+    }
 }
