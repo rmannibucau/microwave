@@ -107,8 +107,13 @@ public class Microwave implements AutoCloseable {
         ctx.addLifecycleListener(new Tomcat.FixContextListener());
 
         ctx.addServletContainerInitializer((c, ctx1) -> {
-            new OWBAutoSetup().onStartup(c, ctx1);
-            new CxfCdiAutoSetup().onStartup(c, ctx1);
+            ctx.getServletContext().setAttribute("microwave.configuration", configuration);
+            try {
+                new OWBAutoSetup().onStartup(c, ctx1);
+                new CxfCdiAutoSetup().onStartup(c, ctx1);
+            } finally {
+                ctx.getServletContext().removeAttribute("microwave.configuration");
+            }
         }, emptySet());
 
         ofNullable(customizer).ifPresent(c -> c.accept(ctx));
@@ -149,20 +154,18 @@ public class Microwave implements AutoCloseable {
         }
 
         final Properties props = configuration.properties;
-        if (props != null) {
-            StrSubstitutor substitutor = null;
-            for (final String s : props.stringPropertyNames()) {
-                final String v = props.getProperty(s);
-                if (v != null && v.contains("${")) {
-                    if (substitutor == null) {
-                        final Map<String, String> placeHolders = new HashMap<>();
-                        placeHolders.put("microwave.embedded.http", Integer.toString(configuration.httpPort));
-                        placeHolders.put("microwave.embedded.https", Integer.toString(configuration.httpsPort));
-                        placeHolders.put("microwave.embedded.stop", Integer.toString(configuration.stopPort));
-                        substitutor = new StrSubstitutor(placeHolders);
-                    }
-                    props.put(s, substitutor.replace(v));
+        StrSubstitutor substitutor = null;
+        for (final String s : props.stringPropertyNames()) {
+            final String v = props.getProperty(s);
+            if (v != null && v.contains("${")) {
+                if (substitutor == null) {
+                    final Map<String, String> placeHolders = new HashMap<>();
+                    placeHolders.put("microwave.embedded.http", Integer.toString(configuration.httpPort));
+                    placeHolders.put("microwave.embedded.https", Integer.toString(configuration.httpsPort));
+                    placeHolders.put("microwave.embedded.stop", Integer.toString(configuration.stopPort));
+                    substitutor = new StrSubstitutor(placeHolders);
                 }
+                props.put(s, substitutor.replace(v));
             }
         }
 
@@ -444,7 +447,7 @@ public class Microwave implements AutoCloseable {
         protected String dir;
         private File serverXml;
         private boolean keepServerXmlAsThis;
-        private Properties properties;
+        private Properties properties = new Properties();
         private boolean quickSession = true;
         private boolean skipHttp;
         private int httpsPort = 8443;
@@ -502,9 +505,6 @@ public class Microwave implements AutoCloseable {
         }
 
         public Builder property(final String key, final String value) {
-            if (properties == null) {
-                properties = new Properties();
-            }
             properties.setProperty(key, value);
             return this;
         }
