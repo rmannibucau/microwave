@@ -16,7 +16,7 @@ public class OWBAutoSetup implements ServletContainerInitializer {
     @Override
     public void onStartup(final Set<Class<?>> c, final ServletContext ctx) throws ServletException {
         final Microwave.Builder builder = Microwave.Builder.class.cast(ctx.getAttribute("microwave.configuration"));
-        if (builder.properties() != null && "true".equalsIgnoreCase(builder.properties().getProperty("microwave.cdi.conversation.support", "false"))) {
+        if (builder.cdiConversation()) {
             final FilterRegistration.Dynamic filter = ctx.addFilter("owb-conversation", WebConversationFilter.class);
             filter.addMappingForUrlPatterns(EnumSet.allOf(DispatcherType.class), false, "/*");
         }

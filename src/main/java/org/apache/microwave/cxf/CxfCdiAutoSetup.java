@@ -49,6 +49,6 @@ public class CxfCdiAutoSetup implements ServletContainerInitializer {
         });
         jaxrs.setLoadOnStartup(1);
         jaxrs.setAsyncSupported(true);
-        jaxrs.addMapping(builder.properties().getProperty("microwave.jaxrs.mapping", "/*"));
+        jaxrs.addMapping(builder.jaxrsMapping());
     }
 }

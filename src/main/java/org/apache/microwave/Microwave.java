@@ -471,6 +471,8 @@ public class Microwave implements AutoCloseable {
         private boolean webResourceCached = true;
         private String conf;
         private boolean deleteBaseOnStartup = true;
+        private String jaxrsMapping = "/*";
+        private boolean cdiConversation;
 
         public Builder randomHttpPort() {
             try (final ServerSocket serverSocket = new ServerSocket(0)) {
