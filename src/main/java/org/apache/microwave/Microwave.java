@@ -495,6 +495,10 @@ public class Microwave implements AutoCloseable {
         private String jaxrsMapping = "/*";
         private boolean cdiConversation;
 
+        public Builder() { // load defaults
+            loadFrom("microwave.properties");
+        }
+
         public Builder randomHttpPort() {
             try (final ServerSocket serverSocket = new ServerSocket(0)) {
                 this.httpPort = serverSocket.getLocalPort();
@@ -506,10 +510,12 @@ public class Microwave implements AutoCloseable {
 
         public Builder loadFrom(final String resource) {
             try (final InputStream is = findStream(resource)) {
-                final Properties config = new Properties() {{
-                    load(is);
-                }};
-                loadFromProperties(config);
+                if (is != null) {
+                    final Properties config = new Properties() {{
+                        load(is);
+                    }};
+                    loadFromProperties(config);
+                }
                 return this;
             } catch (final IOException e) {
                 throw new IllegalStateException(e);
@@ -538,8 +544,6 @@ public class Microwave implements AutoCloseable {
                 final File file = new File(resource);
                 if (file.exists()) {
                     return new FileInputStream(file);
-                } else {
-                    throw new IllegalArgumentException("Didn't find: " + resource);
                 }
             }
             return stream;
