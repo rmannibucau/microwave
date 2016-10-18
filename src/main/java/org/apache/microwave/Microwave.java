@@ -118,6 +118,11 @@ public class Microwave implements AutoCloseable {
         return this;
     }
 
+    public Microwave bake() {
+        start();
+        return deployClasspath();
+    }
+
     public Microwave start() {
         if (configuration.quickSession) {
             tomcat = new TomcatWithFastSessionIDs();
