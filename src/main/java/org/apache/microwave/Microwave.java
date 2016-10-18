@@ -1,6 +1,9 @@
 package org.apache.microwave;
 
 import lombok.Data;
+import lombok.Getter;
+import lombok.experimental.Accessors;
+import org.apache.catalina.Context;
 import org.apache.catalina.Engine;
 import org.apache.catalina.Host;
 import org.apache.catalina.LifecycleException;
@@ -9,6 +12,7 @@ import org.apache.catalina.Realm;
 import org.apache.catalina.Server;
 import org.apache.catalina.Service;
 import org.apache.catalina.connector.Connector;
+import org.apache.catalina.core.StandardContext;
 import org.apache.catalina.session.ManagerBase;
 import org.apache.catalina.session.StandardManager;
 import org.apache.catalina.startup.Catalina;
@@ -18,6 +22,8 @@ import org.apache.commons.lang3.text.StrLookup;
 import org.apache.commons.lang3.text.StrSubstitutor;
 import org.apache.coyote.http2.Http2Protocol;
 import org.apache.cxf.helpers.FileUtils;
+import org.apache.microwave.cxf.CxfCdiAutoSetup;
+import org.apache.microwave.openwebbeans.OWBAutoSetup;
 import org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.tomcat.util.descriptor.web.SecurityCollection;
 import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
@@ -47,25 +53,67 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 
 import static java.util.Arrays.asList;
+import static java.util.Collections.emptySet;
+import static java.util.Optional.ofNullable;
 
 public class Microwave implements AutoCloseable {
+    @Getter
     private final Builder configuration;
     private InternalTomcat tomcat;
     private File base;
 
-    private Microwave(final Builder builder) {
+    // we can undeploy webapps with that later
+    private final Map<String, Context> contexts = new HashMap<>();
+
+    public Microwave(final Builder builder) {
         this.configuration = builder;
     }
 
     public Microwave deployClasspath() {
-        // TODO: don't forget to add CXFCdiServlet and @Produces the bus with config
-        return this;
+        return deployClasspath("");
+    }
+
+    public Microwave deployClasspath(final String context) {
+        final File dir = new File(configuration.tempDir, "classpath/fake-" + context.replace("/", ""));
+        FileUtils.mkDir(dir);
+        return deployWebapp(context, dir);
     }
 
     public Microwave deployWebapp(final File warOrDir) {
-        // TODO
+        return deployWebapp("", warOrDir, null);
+    }
+
+    public Microwave deployWebapp(final String context, final File warOrDir) {
+        return deployWebapp(context, warOrDir, null);
+    }
+
+    public Microwave deployWebapp(final String context, final File warOrDir, final Consumer<Context> customizer) {
+        if (contexts.containsKey(context)) {
+            throw new IllegalArgumentException("Already deployed: '" + context + "'");
+        }
+
+        final Context ctx = new StandardContext();
+        ctx.setPath(context);
+        ctx.setName(context);
+        try {
+            ctx.setDocBase(warOrDir.getCanonicalPath());
+        } catch (final IOException e) {
+            ctx.setDocBase(warOrDir.getAbsolutePath());
+        }
+        ctx.addLifecycleListener(new Tomcat.FixContextListener());
+
+        ctx.addServletContainerInitializer((c, ctx1) -> {
+            new OWBAutoSetup().onStartup(c, ctx1);
+            new CxfCdiAutoSetup().onStartup(c, ctx1);
+        }, emptySet());
+
+        ofNullable(customizer).ifPresent(c -> c.accept(ctx));
+
+        tomcat.getHost().addChild(ctx);
+        contexts.put(context, ctx);
         return this;
     }
 
@@ -252,6 +300,9 @@ public class Microwave implements AutoCloseable {
 
     @Override
     public void close() {
+        if (tomcat == null) {
+            return;
+        }
         try {
             tomcat.stop();
             tomcat.destroy();
@@ -378,8 +429,8 @@ public class Microwave implements AutoCloseable {
         }
     }
 
-    @Data // for factories and read later
-    @lombok.Builder
+    @Data
+    @Accessors(fluent = true)
     public static class Builder {
         private int httpPort = 8080;
         private int stopPort = 8005;
