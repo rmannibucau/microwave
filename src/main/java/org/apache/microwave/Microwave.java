@@ -5,7 +5,9 @@ import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.apache.catalina.Context;
 import org.apache.catalina.Engine;
+import org.apache.catalina.Globals;
 import org.apache.catalina.Host;
+import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Manager;
 import org.apache.catalina.Realm;
@@ -24,6 +26,7 @@ import org.apache.coyote.http2.Http2Protocol;
 import org.apache.cxf.helpers.FileUtils;
 import org.apache.microwave.cxf.CxfCdiAutoSetup;
 import org.apache.microwave.openwebbeans.OWBAutoSetup;
+import org.apache.microwave.tomcat.ProvidedLoader;
 import org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.tomcat.util.descriptor.web.SecurityCollection;
 import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
@@ -55,7 +58,6 @@ import java.util.Properties;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 
-import static java.util.Arrays.asList;
 import static java.util.Collections.emptySet;
 import static java.util.Optional.ofNullable;
 
@@ -80,7 +82,7 @@ public class Microwave implements AutoCloseable {
     public Microwave deployClasspath(final String context) {
         final File dir = new File(configuration.tempDir, "classpath/fake-" + context.replace("/", ""));
         FileUtils.mkDir(dir);
-        return deployWebapp(context, dir);
+        return deployWebapp(context, dir, c -> c.setLoader(new ProvidedLoader(Thread.currentThread().getContextClassLoader())));
     }
 
     public Microwave deployWebapp(final File warOrDir) {
@@ -105,6 +107,26 @@ public class Microwave implements AutoCloseable {
             ctx.setDocBase(warOrDir.getAbsolutePath());
         }
         ctx.addLifecycleListener(new Tomcat.FixContextListener());
+        ctx.addLifecycleListener(event -> {
+            switch (event.getType()) {
+                case Lifecycle.AFTER_START_EVENT:
+                    ctx.getResources().setCachingAllowed(configuration.webResourceCached);
+                    break;
+                case Lifecycle.BEFORE_START_EVENT:
+                    if (configuration.loginConfig() != null) {
+                        ctx.setLoginConfig(configuration.loginConfig().build());
+                    }
+                    for (final SecurityConstaintBuilder sc : configuration.securityConstraints) {
+                        ctx.addConstraint(sc.build());
+                    }
+                    if (configuration.webXml != null) {
+                        ctx.getServletContext().setAttribute(Globals.ALT_DD_ATTR, configuration.webXml);
+                    }
+                    break;
+                default:
+            }
+
+        });
 
         ctx.addServletContainerInitializer((c, ctx1) -> {
             ctx.getServletContext().setAttribute("microwave.configuration", configuration);
@@ -442,6 +464,7 @@ public class Microwave implements AutoCloseable {
     @Accessors(fluent = true)
     public static class Builder {
         private int httpPort = 8080;
+        private int httpsPort = 8443;
         private int stopPort = 8005;
         private String host = "localhost";
         protected String dir;
@@ -450,7 +473,6 @@ public class Microwave implements AutoCloseable {
         private Properties properties = new Properties();
         private boolean quickSession = true;
         private boolean skipHttp;
-        private int httpsPort = 8443;
         private boolean ssl;
         private String keystoreFile;
         private String keystorePass;
@@ -461,7 +483,6 @@ public class Microwave implements AutoCloseable {
         private String webXml;
         private LoginConfigBuilder loginConfig;
         private Collection<SecurityConstaintBuilder> securityConstraints = new LinkedList<>();
-        private Collection<String> customWebResources = new LinkedList<>();
         private Realm realm;
         private Map<String, String> users;
         private Map<String, String> roles;
@@ -522,10 +543,6 @@ public class Microwave implements AutoCloseable {
                 }
             }
             return stream;
-        }
-
-        public void setCustomWebResources(final String web) {
-            customWebResources.addAll(asList(web.split(",")));
         }
 
         public Builder user(final String name, final String pwd) {
@@ -652,10 +669,6 @@ public class Microwave implements AutoCloseable {
             final String tempDir = config.getProperty("tempDir");
             if (tempDir != null) {
                 this.tempDir = tempDir;
-            }
-            final String customWebResources = config.getProperty("customWebResources");
-            if (customWebResources != null) {
-                setCustomWebResources(customWebResources);
             }
             final String conf = config.getProperty("conf");
             if (conf != null) {
